@@ -89,6 +89,8 @@ jobs:
           done
           
           sed -i "s/community-be-[a-z]\\+/community-be-\$TARGET/g" /home/ubuntu/bluegreen/nginx.conf
-          docker compose restart nginx-proxy
+          docker stop nginx-proxy
+          docker rm nginx-proxy
+          docker compose up -d nginx-proxy
           docker stop \$STOP || true
           EOF
