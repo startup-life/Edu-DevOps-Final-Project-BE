@@ -50,7 +50,8 @@ const limiter = rateLimit({
     // RateLimit 헤더 정보를 표준으로 사용할 지 여부
     standardHeaders: true,
     // 레거시 X-RateLimit 헤더를 제거할 지 여부
-    legacyHeaders: false
+    legacyHeaders: false,
+    validate: false // 프록시 관련 IP 검증을 비활성화
 });
 
 // 정적 파일 경로 설정
