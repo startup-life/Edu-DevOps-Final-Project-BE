@@ -45,6 +45,12 @@ jobs:
 
           cd /home/${{ secrets.SERVER_USER }}/bluegreen
 
+          if docker ps -a | grep community-be; then
+            echo "Stopping and removing legacy container: community-be"
+            docker stop community-be || true
+            docker rm community-be || true
+          fi
+
           echo "DB_HOST=${{ secrets.DB_HOST }}" > .env
           echo "DB_USER=${{ secrets.DB_USER }}" >> .env
           echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
