@@ -1,17 +1,16 @@
-name: Node.js CI/CD
+name: Node.js Blue/Green CI/CD
 
 on:
   push:
     branches:
-      - main
+      - bluegreen
   pull_request:
     branches:
-      - main
+      - bluegreen
 
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v2
@@ -39,20 +38,51 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2 via Docker Compose
+      - name: Blue/Green Deploy to EC2
         run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-          cd /home/${{ secrets.SERVER_USER }}/backend
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} 'bash -s' <<EOF
+          set -e
 
-            echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
-            echo "DB_USER=${{ secrets.DB_USER }}" >> .env
-            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-            echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" >> .env
-            echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
-            echo "BACKEND_PORT=${{ secrets.BACKEND_PORT }}" >> .env
-            echo "NODE_ENV=${{ secrets.NODE_ENV }}" >> .env
-            echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> .env
+          cd /home/${{ secrets.SERVER_USER }}/bluegreen
+
+          echo "DB_HOST=${{ secrets.DB_HOST }}" > .env
+          echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_DATABASE=${{ secrets.DB_DATABASE }}" >> .env
+          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+          echo "BACKEND_PORT=${{ secrets.BACKEND_PORT }}" >> .env
+          echo "NODE_ENV=${{ secrets.NODE_ENV }}" >> .env
+          echo "SESSION_SECRET=${{ secrets.SESSION_SECRET }}" >> .env
+
+          if docker ps | grep community-be-blue; then
+            TARGET=green
+            STOP=community-be-blue
+            PORT=3002
+          elif docker ps | grep community-be-green; then
+            TARGET=blue
+            STOP=community-be-green
+            PORT=3001
+          else
+            TARGET=blue
+            STOP=none
+            PORT=3001
+          fi
+            
+          docker compose pull community-be-\$TARGET
+          docker compose up -d community-be-\$TARGET
           
-          docker compose pull
-          docker compose up -d
+          for i in {1..10}; do
+          sleep 2
+          if docker exec community-be-\$TARGET curl -f http://localhost:3000/health; then
+          break
+          elif [ \$i -eq 10 ]; then
+          docker stop community-be-\$TARGET
+          docker compose restart \$STOP
+          exit 1
+          fi
+          done
+          
+          sed -i "s/community-be-[a-z]\\+/community-be-\$TARGET/g" /home/ubuntu/bluegreen/nginx.conf
+          docker compose restart nginx-proxy
+          docker stop \$STOP || true
           EOF

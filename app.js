@@ -88,6 +88,14 @@ app.use(helmet());
 // Routes
 app.use('/', route);
 
+// Health Check Route
+app.get('/health', (request, response) => {
+    response.status(200).json({
+        message: 'ok',
+        data: null,
+    });
+});
+
 // Error Handler
 app.use(notFoundHandler);
 app.use(errorHandler);
