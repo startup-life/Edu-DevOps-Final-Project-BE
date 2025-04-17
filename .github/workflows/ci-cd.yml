@@ -3,10 +3,10 @@ name: Node.js Blue/Green CI/CD
 on:
   push:
     branches:
-      - bluegreen
+      - main
   pull_request:
     branches:
-      - bluegreen
+      - main
 
 jobs:
   build-and-push-image:
@@ -73,24 +73,39 @@ jobs:
             STOP=none
             PORT=3001
           fi
-            
+          
+          echo "Deploying target: \$TARGET"
           docker compose pull community-be-\$TARGET
           docker compose up -d community-be-\$TARGET
-          
-          for i in {1..10}; do
-          sleep 2
-          if docker exec community-be-\$TARGET curl -f http://localhost:3000/health; then
-          break
-          elif [ \$i -eq 10 ]; then
-          docker stop community-be-\$TARGET
-          docker compose restart \$STOP
-          exit 1
+
+          if [ "\$STOP" != "none" ]; then
+            echo "Running health check on community-be-\$TARGET"
+            for i in {1..10}; do
+              sleep 2
+              if docker exec community-be-\$TARGET curl -f http://localhost:3000/health; then
+                echo "Health check passed"
+                break
+              elif [ \$i -eq 10 ]; then
+                echo "Health check failed. Rolling back to \$STOP"
+                docker stop community-be-\$TARGET
+                docker compose restart \$STOP
+                exit 1
+              fi
+            done
+          else
+            echo "First deployment. Skipping health check and rollback."
           fi
-          done
-          
+
+          echo "Updating nginx to point to community-be-\$TARGET"
           sed -i "s/community-be-[a-z]\\+/community-be-\$TARGET/g" /home/ubuntu/bluegreen/nginx.conf
-          docker stop nginx-proxy
-          docker rm nginx-proxy
+          docker stop nginx-proxy || true
+          docker rm -f nginx-proxy || true
           docker compose up -d nginx-proxy
-          docker stop \$STOP || true
+          
+          if [ "\$STOP" != "none" ]; then
+            echo "Stopping previous container: \$STOP"
+            docker stop \$STOP || true
+          fi
+          
+          echo "Deployment complete: \$TARGET"
           EOF
